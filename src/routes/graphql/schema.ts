@@ -6,15 +6,14 @@ import {
     GraphQLObjectType, GraphQLSchema,
     GraphQLString
 } from "graphql/type/index.js";
-import {MemberType, PrismaClient, User} from "@prisma/client";
+import {PrismaClient, Profile, SubscribersOnAuthors, User} from "@prisma/client";
 import {UUIDType} from "./types/uuid.js";
 import {UUID} from "crypto";
-import {MemberTypeId} from "../member-types/schemas.js";
-import memberTypes from "../member-types/index.js";
+import {MemberTypeId as MemberTypeEnumId} from "../member-types/schemas.js";
 
 const prisma = new PrismaClient();
 
-const MemberTypeEnum = new GraphQLEnumType({
+const MemberTypeId = new GraphQLEnumType({
     name: 'MemberTypeId',
     values: {
         basic: { value: 'basic' },
@@ -22,6 +21,15 @@ const MemberTypeEnum = new GraphQLEnumType({
     },
 });
 
+const memberType: GraphQLObjectType = new GraphQLObjectType({
+    name: 'MemberType',
+    fields: () => ({
+        id: { type: MemberTypeId },
+        discount: { type: new GraphQLNonNull(GraphQLFloat) },
+        postsLimitPerMonth: { type: new GraphQLNonNull(GraphQLInt) },
+        profiles: { type: new GraphQLList(profileType) }
+    }),
+});
 const profileType: GraphQLObjectType = new GraphQLObjectType({
     name: 'Profile',
     fields: () => ({
@@ -31,10 +39,20 @@ const profileType: GraphQLObjectType = new GraphQLObjectType({
         user: { type: new GraphQLNonNull(userType) },
         userId: { type: new GraphQLNonNull(GraphQLString) },
         memberType: {
-            type: memberType
+            type: memberType,
+            resolve: async (parent: Profile, _) => {
+                try {
+                    return await prisma.memberType.findUnique({
+                        where: {id: parent.memberTypeId},
+                    });
+                } catch (error) {
+                    console.error(error);
+                    throw new Error('Failed to create user.');
+                }
+            },
 
         },
-        memberTypeId: { type: new GraphQLNonNull(GraphQLString) },
+        memberTypeId: { type: MemberTypeId },
     }),
 });
 
@@ -46,30 +64,25 @@ const userType: GraphQLObjectType = new GraphQLObjectType({
         balance: { type: new GraphQLNonNull(GraphQLFloat) },
         profile: { type: profileType },
         posts: { type: new GraphQLList(postType) },
-        userSubscribedTo: {type: new GraphQLList(authorSubscriberType)},
-        subscribedToUser: {type: new GraphQLList(authorSubscriberType)}
+        userSubscribedTo: {
+            type: new GraphQLList(authorSubscriberType)
+        },
+        subscribedToUser: {
+            type: new GraphQLList(authorSubscriberType)
+        }
     }),
 });
 
 const authorSubscriberType: GraphQLObjectType = new GraphQLObjectType({
     name: 'SubscribersOnAuthors',
     fields: () => ({
-        subscriber: { type: new GraphQLNonNull(userType) },
-        subscriberId: { type: new GraphQLNonNull(GraphQLString) },
-        author: { type: new GraphQLNonNull(userType) },
-        authorId: { type: new GraphQLNonNull(GraphQLString) }
+        subscribedToUser: {type: new GraphQLNonNull(userType)},
+        subscribedToUserId: { type: new GraphQLNonNull(UUIDType) },
+        userSubscribedTo: { type: new GraphQLNonNull(userType) },
+        userSubscribedToId: { type: new GraphQLNonNull(UUIDType) }
     }),
 });
 
-const memberType: GraphQLObjectType = new GraphQLObjectType({
-    name: 'MemberType',
-    fields: () => ({
-        id: { type: GraphQLID },
-        discount: { type: new GraphQLNonNull(GraphQLFloat) },
-        postsLimitPerMonth: { type: new GraphQLNonNull(GraphQLInt) },
-        profiles: { type: new GraphQLList(profileType) }
-    }),
-});
 
 const postType: GraphQLObjectType = new GraphQLObjectType({
     name: 'Post',
@@ -96,7 +109,7 @@ const queryType: GraphQLObjectType = new GraphQLObjectType({
                     const {id} = <{id: UUID}>args;
                     return await prisma.user.findUnique({
                         where: {id},
-                        include: { profile: true, posts: true },
+                        include: { profile: true, posts: true, userSubscribedTo: true, subscribedToUser: true },
                     });
                 } catch (error) {
                     console.error(error);
@@ -109,7 +122,7 @@ const queryType: GraphQLObjectType = new GraphQLObjectType({
             resolve: async () => {
                 try {
                     return await prisma.user.findMany({
-                        include: { profile: true, posts: true },
+                        include: { profile: true, posts: true, userSubscribedTo: true, subscribedToUser: true },
                     });
                 } catch (error) {
                     console.error(error);
@@ -182,11 +195,11 @@ const queryType: GraphQLObjectType = new GraphQLObjectType({
         memberType: {
             type: memberType,
             args: {
-                id: {type: MemberTypeEnum}
+                id: {type: MemberTypeId}
             },
             resolve: async (_, args) => {
                 try {
-                    const {id} = <{id: MemberTypeId}>args;
+                    const {id} = <{id: MemberTypeEnumId}>args;
                     return await prisma.memberType.findUnique({
                         where: {id},
                         include: { profiles: true },
@@ -209,7 +222,7 @@ const queryType: GraphQLObjectType = new GraphQLObjectType({
                     throw new Error('Failed to fetch memberTypes.');
                 }
             },
-        }
+        },
     },
 });
 
@@ -239,26 +252,47 @@ const mutationType: GraphQLObjectType = new GraphQLObjectType({
 
 const subscriptionType: GraphQLObjectType = new GraphQLObjectType({
     name: 'Subscription',
-    fields: {
-        user: {
-            type: userType,
-            args: {
-                name: {type: new GraphQLNonNull(GraphQLString)},
-                balance: {type: new GraphQLNonNull(GraphQLFloat)}
-            },
-            resolve: async (_, args) => {
-                try {
-                    const {name, balance} = <{name: string, balance: number}>args;
-                    return await prisma.user.create({
-                        data: {name, balance},
-                    });
-                } catch (error) {
-                    console.error(error);
-                    throw new Error('Failed to create user.');
+    fields: () => ({
+        subscriber: async (parent: User) => {
+            try {
+                const subscription = await prisma.subscribersOnAuthors.findMany({
+                    where: {
+                        subscriberId: parent.id,
+                    },
+                });
+
+                if (!subscription) {
+                    throw new Error('Subscription not found');
                 }
-            },
-        }
-    },
+
+                return prisma.user.findMany({
+                    where: {
+                        id: subscription[0].subscriberId,
+                    },
+                });
+            } catch (error) {
+                console.error(error);
+                throw new Error('Failed to fetch subscriber information');
+            }
+        },
+        author: async (parent: User) => {
+            const subscription = await prisma.subscribersOnAuthors.findMany({
+                where: {
+                    authorId: parent.id,
+                },
+            });
+
+            if (!subscription) {
+                throw new Error('Subscription not found');
+            }
+
+            return prisma.user.findMany({
+                where: {
+                    id: subscription[0].subscriberId,
+                },
+            });
+        },
+    }),
 });
 
 export const schema = new GraphQLSchema({
