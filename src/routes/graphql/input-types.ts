@@ -7,7 +7,7 @@ import {UUIDType} from "./types/uuid.js";
 import {MemberTypeId} from "./schema-types.js";
 
 export const profileInputType: GraphQLInputObjectType = new GraphQLInputObjectType({
-    name: 'ProfileInput',
+    name: 'CreateProfileInput',
     fields: () => ({
         userId: {type: new GraphQLNonNull(UUIDType)},
         isMale: {type: new GraphQLNonNull(GraphQLBoolean)},
@@ -17,7 +17,7 @@ export const profileInputType: GraphQLInputObjectType = new GraphQLInputObjectTy
 });
 
 export const userInputType: GraphQLInputObjectType = new GraphQLInputObjectType({
-    name: 'UserInput',
+    name: 'CreateUserInput',
     fields: () => ({
         name: {type: new GraphQLNonNull(GraphQLString)},
         balance: {type: new GraphQLNonNull(GraphQLFloat)}
@@ -25,10 +25,31 @@ export const userInputType: GraphQLInputObjectType = new GraphQLInputObjectType(
 });
 
 export const postInputType: GraphQLInputObjectType = new GraphQLInputObjectType({
-    name: 'PostInput',
+    name: 'CreatePostInput',
     fields: () => ({
         authorId: {type: new GraphQLNonNull(UUIDType)},
         content: {type: new GraphQLNonNull(GraphQLString)},
         title: {type: new GraphQLNonNull(GraphQLString)}
+    })
+});
+
+export const postUpdateType: GraphQLInputObjectType = new GraphQLInputObjectType({
+    name: 'ChangePostInput',
+    fields: () => ({
+        title: {type: new GraphQLNonNull(GraphQLString)}
+    })
+});
+
+export const profileUpdateType: GraphQLInputObjectType = new GraphQLInputObjectType({
+    name: 'ChangeProfileInput',
+    fields: () => ({
+        isMale: {type: GraphQLBoolean},
+    })
+});
+
+export const userUpdateType: GraphQLInputObjectType = new GraphQLInputObjectType({
+    name: 'ChangeUserInput',
+    fields: () => ({
+        name: {type: new GraphQLNonNull(GraphQLString)}
     })
 });

@@ -1,9 +1,10 @@
 import {
+    GraphQLBoolean,
     GraphQLList,
     GraphQLNonNull,
     GraphQLObjectType, GraphQLSchema,
 } from "graphql/type/index.js";
-import {PrismaClient} from "@prisma/client";
+import {PrismaClient, User} from "@prisma/client";
 import {UUIDType} from "./types/uuid.js";
 import {UUID} from "crypto";
 import {MemberTypeId as MemberTypeEnumId} from "../member-types/schemas.js";
@@ -18,8 +19,16 @@ import {
 import {randomUUID} from "node:crypto";
 import {postInputValidator, profileInputValidator, userInputValidator} from "./validator.js";
 import {InvalidArgumentException} from "./Exception/invalid_argument.js";
-import {postInputType, profileInputType, userInputType} from "./input-types.js";
-import {CreatePostInput, CreateProfileInput, CreateUserInput} from "./dto-types.js";
+import {
+    postInputType, postUpdateType,
+    profileInputType, profileUpdateType,
+    userInputType, userUpdateType
+} from "./input-types.js";
+import {
+    CreatePostInput,
+    CreateProfileInput,
+    CreateUserInput, ChangePostInput, ChangeProfileInput, ChangeUserInput
+} from "./dto-types.js";
 
 const prisma = new PrismaClient();
 
@@ -244,6 +253,168 @@ const mutationRoot: GraphQLObjectType = new GraphQLObjectType({
                     }
 
                     throw new Error('Failed to create post.');
+                }
+            },
+        },
+        deletePost: {
+            type: GraphQLBoolean,
+            args: {
+                id: {type: UUIDType}
+            },
+            resolve: async (_, args) => {
+                try {
+                    const {id} = <{id: UUID}>args;
+                    await prisma.post.delete({
+                        where: {id},
+                    });
+
+                    return true;
+
+                } catch (error) {
+                    return false;
+                }
+            },
+        },
+        deleteProfile: {
+            type: GraphQLBoolean,
+            args: {
+                id: {type: UUIDType}
+            },
+            resolve: async (_, args) => {
+                try {
+                    const {id} = <{id: UUID}>args;
+
+                    await prisma.profile.delete({
+                        where: {id},
+                    });
+
+                    return true;
+                } catch (error) {
+                    return false;
+                }
+            },
+        },
+        deleteUser: {
+            type: GraphQLBoolean,
+            args: {
+                id: {type: UUIDType}
+            },
+            resolve: async (_, args) => {
+                try {
+                    const {id} = <{id: UUID}>args;
+
+                    await prisma.user.delete({
+                        where: {id},
+                    });
+
+                    return true;
+                } catch (error) {
+                    return false;
+                }
+            },
+        },
+        changePost: {
+            type: postType,
+            args: {
+                id: {type: UUIDType},
+                dto: {
+                    type: postUpdateType
+                }
+            },
+            resolve: async (_, args) => {
+                try {
+                    const {id, dto} = <{id: UUID, dto: ChangePostInput}>args;
+                    return await prisma.post.update({
+                        where: {id},
+                        data: dto
+                    });
+                } catch (error) {
+                    throw new Error('Failed to update post.');
+                }
+            },
+        },
+        changeProfile: {
+            type: profileType,
+            args: {
+                id: {type: UUIDType},
+                dto: {
+                    type: profileUpdateType
+                }
+            },
+            resolve: async (_, args) => {
+                try {
+                    const {id, dto} = <{id: UUID, dto: ChangeProfileInput}>args;
+                    return await prisma.profile.update({
+                        where: {id},
+                        data: dto
+                    });
+                } catch (error) {
+                    throw new Error('Failed to update profile.');
+                }
+            },
+        },
+        changeUser: {
+            type: userType,
+            args: {
+                id: {type: UUIDType},
+                dto: {
+                    type: userUpdateType
+                }
+            },
+            resolve: async (_, args) => {
+                try {
+                    const {id, dto} = <{id: UUID, dto: ChangeUserInput}>args;
+                    return await prisma.user.update({
+                        where: {id},
+                        data: dto
+                    });
+                } catch (error) {
+                    throw new Error('Failed to update user.');
+                }
+            },
+        },
+        subscribeTo: {
+            type: new GraphQLList(userType),
+            args: {
+                userId: {type: UUIDType},
+                authorId: {type: UUIDType}
+            },
+            resolve: async (_, args) => {
+                try {
+                    const {userId, authorId} = <{userId: UUID, authorId: UUID}>args;
+
+                    await prisma.subscribersOnAuthors.create({
+                        data: {subscriberId: userId, authorId: authorId},
+                    });
+                    const user = await prisma.user.findUnique({
+                        where:{
+                            id: authorId,
+                        },
+                    });
+
+                    return [user];
+                } catch (error) {
+                    throw new Error('Failed to create subscription.');
+                }
+            },
+        },
+        unsubscribeFrom: {
+            type: GraphQLBoolean,
+            args: {
+                userId: {type: UUIDType},
+                authorId: {type: UUIDType}
+            },
+            resolve: async (_, args) => {
+                try {
+                    const {userId, authorId} = <{userId: UUID, authorId: UUID}>args;
+
+                    await prisma.subscribersOnAuthors.deleteMany({
+                        where: {subscriberId: userId, authorId: authorId}
+                    });
+
+                    return true;
+                } catch (error) {
+                    return false;
                 }
             },
         },

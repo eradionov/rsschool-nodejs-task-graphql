@@ -19,3 +19,15 @@ export interface CreatePostInput {
     content: string,
     title: string,
 }
+
+export interface ChangePostInput {
+    title: string
+}
+
+export interface ChangeProfileInput {
+    isMale: boolean
+}
+
+export interface ChangeUserInput {
+    name: string
+}
